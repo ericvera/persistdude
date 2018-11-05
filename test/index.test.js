@@ -1,95 +1,61 @@
-const fs = require("fs");
+const fs = require('fs')
 
-describe("persistdude", () => {
+describe('PersistDude', () => {
   beforeAll(async () => {
     // NOTE: Required ot navigate to a file. `window.crypto.subtle` is not available in 'new tab' context.
-    await page.goto("file:///dev/null");
+    await page.goto('file:///dev/null')
 
     // Load scripts into browser context
     await page.addScriptTag({
-      content: `${fs.readFileSync("./dist/persistdude.js")}`
-    });
-    await page.addScriptTag({
-      content: `${fs.readFileSync("./test/testdata.js")}`
-    });
-    await page.on("console", msg => {
+      content: `${fs.readFileSync('./dist/persistdude.js')}`
+    })
+    await page.on('console', msg => {
       for (let i = 0; i < msg.args().length; ++i)
-        console.log(`${i}: ${msg.args()[i]}`);
-    });
-  });
+        console.log(`${i}: ${msg.args()[i]}`)
+    })
+  })
 
-  it("should generate an initiation vector", async () => {
-    const iv = await page.evaluate(async () => {
-      return persistdude.generateIV();
-    });
+  afterEach(async () => {
+    await page.evaluate(async () => {
+      const db = PersistDude.getDB('kh')
+      await db.deleteDb()
+    })
+  })
 
-    expect(iv).toHaveLength(16);
-  });
+  it('can initiate a db without exception', async () => {
+    try {
+      await page.evaluate(async () => {
+        PersistDude.getDB('kh')
+      })
+    } catch (e) {
+      fail('should not have thrown')
+    }
+  })
 
-  it("should generate a new key", async () => {
-    const key = await page.evaluate(async () => {
-      return persistdude.generateEncryptionDecryptionKey();
-    });
+  it('can set a document', async () => {
+    const result = await page.evaluate(async () => {
+      const persistentDB = PersistDude.getDB('kh')
+      await persistentDB.add('human/abuo080enlfd', { name: 'hahaha' })
+      const data = await persistentDB.get('human/abuo080enlfd')
 
-    expect(typeof key).toEqual("object");
-  });
+      return data
+    })
 
-  it("should be able to wrap a key", async () => {
-    const wrappedKey = await page.evaluate(async () => {
-      const key = await persistdude.generateEncryptionDecryptionKey();
-      const iv = await persistdude.generateIV();
-      return persistdude.wrapKey(TestData.passphrase, iv, key);
-    });
+    expect(result).toEqual({
+      _state: 'new',
+      id: 'human/abuo080enlfd',
+      name: 'hahaha'
+    })
+  })
 
-    expect(typeof wrappedKey).toEqual("string");
-    // base64 strings have length that is a multiple of 4
-    expect(wrappedKey.length % 4).toBe(0);
-  });
+  it('returns undefined if id does not exist', async () => {
+    const result = await page.evaluate(async () => {
+      const persistentDB = PersistDude.getDB('kh')
+      const data = await persistentDB.get('human/abuo080enlfd')
 
-  it("should be able to unwrap a key", async () => {
-    const unwrappedKey = await page.evaluate(async () => {
-      return persistdude.unwrapKey(
-        TestData.passphrase,
-        TestData.passphraseIV,
-        TestData.wrappedKey
-      );
-    });
+      return data
+    })
 
-    expect(typeof unwrappedKey).toEqual("object");
-  });
-
-  it("should be able to encrypt an object", async () => {
-    const encryptedData = await page.evaluate(async () => {
-      const unwrappedKey = await persistdude.unwrapKey(
-        TestData.passphrase,
-        TestData.passphraseIV,
-        TestData.wrappedKey
-      );
-
-      return persistdude.encrypt(TestData.objectToEncrypt, unwrappedKey);
-    });
-
-    expect(typeof encryptedData).toEqual("string");
-    // base64 strings have length that is a multiple of 4
-    expect(encryptedData.length % 4).toBe(0);
-  });
-
-  it("should be able to decrypt an encrypted object", async () => {
-    const expectedObject = await page.evaluate(async () => {
-      return TestData.objectToEncrypt;
-    });
-
-    const decryptedData = await page.evaluate(async () => {
-      const unwrappedKey = await persistdude.unwrapKey(
-        TestData.passphrase,
-        TestData.passphraseIV,
-        TestData.wrappedKey
-      );
-
-      return persistdude.decrypt(TestData.encryptedData, unwrappedKey);
-    });
-
-    expect(typeof decryptedData).toEqual("object");
-    expect(decryptedData).toEqual(expectedObject);
-  });
-});
+    expect(result).toBeUndefined()
+  })
+})
